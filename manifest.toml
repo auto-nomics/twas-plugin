@@ -1,0 +1,65 @@
+schema_version = 1
+plugin_name = "twas"
+
+[image]
+reference = "ghcr.io/auto-nomics/autonomics/fusion@sha256:91d11747476967b0131571308f2a64bb12aa459205f282103f6bed4fb69ca0bf"
+tag = "1.0.0"
+upstream = "gusevlab fusion_twas @ 9346c1222bffbb34499fa7a8e23c1b701b55cb05"
+license = "GPL-3.0-or-later"
+
+# One panel carries the whole FUSION reference: the GTEx v8 per-tissue
+# weight archives under weights/ and the 1000G EUR LDREF under LDREF/.
+# The LD reference is not a separate input; it ships inside this bundle
+# exactly as the legacy wrapper mounted it.
+[[panels]]
+binding = "fusion_ref"
+mount = "/panels/fusion_ref"
+bundle = "wjixiang/catalog-fusion-gtex-v8"
+
+[[nodes]]
+kind = "twas_fusion"
+desc = "Runs official FUSION TWAS association testing against GTEx v8 weights."
+doc = """
+Runs the official FUSION TWAS FUSION.assoc_test.R script in an ephemeral
+OCI container. Input is one whitespace-delimited GWAS sumstats File with
+SNP, A1, A2, and Z; produce it with dataframe_to_file using format="tsv".
+The node mounts the cataloged GTEx v8 weight archives and 1000G EUR LDREF,
+extracts the selected tissue for one chromosome, and emits the official
+association table, log, and any separate MHC result. Set tissue (for
+example Whole_Blood) and chr. By default FUSION selects the best
+cross-validation model; force_model can pin blup, lasso, top1, or enet.
+"""
+timeout_secs = 3600
+artifact_prefix = "/artifacts/twas_fusion"
+
+[nodes.ports]
+inputs = [{ type = "file" }]
+outputs = [
+  { path = "twas_fusion.dat", format = "fusion_twas" },
+  { path = "twas_fusion.log", format = "fusion_twas_log" },
+  { path = "twas_fusion.mhc.dat", format = "fusion_twas_mhc" },
+]
+
+[nodes.params]
+tissue = { type = "string", doc = "GTEx v8 tissue name, for example Whole_Blood" }
+chr = { type = "int", min = 1.0, max = 22.0, doc = "Chromosome to test; FUSION analyzes one chromosome per invocation" }
+force_model = { type = "string", optional = true, doc = "Force a predictive model instead of selecting the best cross-validation model: blup, lasso, top1, or enet" }
+use_nofilter_weights = { type = "bool", default = false, doc = "Use the .nofilter.pos weight manifest instead of the filtered .pos" }
+max_impute = { type = "number", default = 0.5, exclusive_min = 0.0, max = 1.0, doc = "Maximum fraction of missing LDREF SNPs allowed per feature" }
+min_r2pred = { type = "number", default = 0.7, exclusive_min = 0.0, max = 1.0, doc = "Minimum mean LD imputation accuracy for feature SNP z-scores" }
+perm = { type = "int", default = 0, min = 0.0, doc = "Maximum permutations per feature; zero disables permutation testing" }
+perm_minp = { type = "number", default = 0.05, exclusive_min = 0.0, max = 1.0, doc = "P-value threshold below which permutation testing is initiated" }
+
+[nodes.command]
+interpreter = "sh"
+script_file = "scripts/twas_fusion.sh"
+
+[nodes.command.env]
+FUSION_TISSUE_ARCHIVE = "GTExv8.ALL.{{ tissue }}.tar.gz"
+FUSION_CHR = "{{ chr }}"
+FUSION_USE_NOFILTER_WEIGHTS = "{{ use_nofilter_weights }}"
+FUSION_FORCE_MODEL = "{{ force_model }}"
+FUSION_MAX_IMPUTE = "{{ max_impute }}"
+FUSION_MIN_R2PRED = "{{ min_r2pred }}"
+FUSION_PERM = "{{ perm }}"
+FUSION_PERM_MINP = "{{ perm_minp }}"
